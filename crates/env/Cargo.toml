@@ -1,0 +1,8 @@
+[package]
+name = "env"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dotenv = "0.15.0"
+lazy_static = "1.5.0"

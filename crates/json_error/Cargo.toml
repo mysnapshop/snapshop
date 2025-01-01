@@ -1,0 +1,11 @@
+[package]
+name = "json_error"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["derive"]
+derive = ["json_error_derive"]
+
+[dependencies]
+json_error_derive = { path = "json_error_derive", optional = true }

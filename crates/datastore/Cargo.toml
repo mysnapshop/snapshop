@@ -1,0 +1,12 @@
+[package]
+name = "datastore"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lazy_static = "1.5.0"
+mongodb = { version = "3.1.0", features = ["zlib-compression"] }
+serde = "1.0.215"
+serde_json = "1.0.133"
+tokio = "1.42.0"
+env = { path = "../env" }
