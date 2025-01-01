@@ -5,7 +5,7 @@ workspace = { members = [
     "crates/datastore",
     "crates/locale",
     "crates/queue",
-    "crates/json_error",
+    "crates/json_response",
 ] }
 
 [package]
@@ -38,7 +38,7 @@ lazy_static = "1.5.0"
 datastore = { path = "crates/datastore" }
 crypto = { path = "crates/crypto" }
 env = { path = "crates/env" }
-json_error = { path = "crates/json_error" }
+json_response = { path = "crates/json_response" }
 
 [build-dependencies]
 tonic-build = "0.12.3"

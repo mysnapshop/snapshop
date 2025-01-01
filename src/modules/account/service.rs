@@ -2,12 +2,13 @@ use super::model::User;
 use crate::modules::utils::{validate_email, validate_passowrd};
 use datastore::Datastore;
 use mongodb::bson::doc;
-mod error {
+pub mod error {
     use std::fmt::Display;
 
-    use json_error::ErrorCode;
+    use json_response::ErrorCode;
+    use serde::Serialize;
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, ErrorCode, Serialize)]
     pub enum AccountError {
         UserAlreadyExist,
         PasswordInvalid,

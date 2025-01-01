@@ -16,24 +16,17 @@ pub fn error_code_derive(input: TokenStream) -> TokenStream {
 
                 let mut error_code_attr: Option<u16> = None;
                 for attr in variant.clone().attrs {
-                    match attr.parse_nested_meta(|meta| match meta.value() {
-                        Ok(buf) => match buf.parse::<LitInt>() {
-                            Ok(code) => {
-                                error_code_attr = Some(code.base10_parse::<u16>().unwrap());
-                                Ok(())
-                            }
-                            Err(err) => Ok(()),
-                        },
-                        Err(_) => Ok(()),
-                    }) {
-                        Ok(_) => (),
-                        Err(err) => panic!("parse_nested_meta: {err} {:?}", attr),
-                    };
+                    if attr.path().is_ident("error_code") {
+                        match attr.parse_args::<LitInt>() {
+                            Ok(lit) => error_code_attr = Some(lit.base10_parse::<u16>().unwrap()),
+                            Err(err) => panic!("{err}"),
+                        };
+                    }
                 }
 
                 let error_code = match error_code_attr {
                     Some(code) => quote! { #code },
-                    None => quote! { 0 }, // Default to 0 if no error_code attribute is found
+                    None => quote! { 200 }, // Default to 500 if no error_code attribute is found
                 };
 
                 match &variant.fields {
@@ -42,8 +35,16 @@ pub fn error_code_derive(input: TokenStream) -> TokenStream {
                             Self::#variant_name => #error_code,
                         }
                     }
-                    Fields::Named(_) | Fields::Unnamed(_) => {
-                        // Handle tuple and struct variants
+                    Fields::Named(fields) => {
+                        // Handle struct variants correctly
+                        let field_names: Vec<_> =
+                            fields.named.iter().map(|field| &field.ident).collect();
+                        quote_spanned! { variant.span() =>
+                            Self::#variant_name { #(#field_names),* } => #error_code,
+                        }
+                    }
+                    Fields::Unnamed(_) => {
+                        // Handle tuple variants
                         quote_spanned! { variant.span() =>
                             Self::#variant_name(_) => #error_code,
                         }
@@ -53,12 +54,22 @@ pub fn error_code_derive(input: TokenStream) -> TokenStream {
 
             let expanded = quote! {
                 impl #impl_generics ErrorCode for #name #ty_generics #where_clause {
-                    fn error_code(&self) -> i32 {
+                    fn error_code(&self) -> u16 {
                         match self {
                             #(#variants)*
                         }
                     }
                 }
+
+                // impl ToJson<()> for #name {
+                //     fn to_json(self) -> Json<ApiResponse<()>> {
+                //         Json(ApiResponse {
+                //             status: ApiResponseStatus::Success,
+                //             data: None,
+                //             error: Some(crate::ApiError::new(self)),
+                //         })
+                //     }
+                // }
             };
 
             TokenStream::from(expanded)

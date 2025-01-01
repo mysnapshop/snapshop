@@ -1,9 +1,10 @@
 use datastore::Datastore;
+use json_response::ApiResponse;
 use salvo::{
     affix_state, handler, http::StatusCode, writing::Json, Depot, Request, Response, Router,
 };
 use serde::{Deserialize, Serialize};
-use service::AccountService;
+use service::{error::AccountError, AccountService};
 
 mod model;
 mod service;
@@ -32,21 +33,22 @@ async fn register_handler(
     req: &mut Request,
     res: &mut Response,
     depot: &mut Depot,
-) -> Json<RegisterResponse> {
+) -> ApiResponse<RegisterResponse, AccountError> {
     let RegisterRequest { email, password } = match req.parse_json::<RegisterRequest>().await {
         Ok(req) => req,
         Err(err) => {
             res.status_code(StatusCode::BAD_REQUEST);
-            return Json(RegisterResponse {});
+            return ApiResponse::error(AccountError::InternalServerError(err.to_string()));
         }
     };
 
     let svc = depot.obtain::<AccountService>().unwrap();
     match svc.register(email, password).await {
-        Ok(_) => Json(RegisterResponse {}),
-        Err(err) => Json(RegisterResponse {}),
+        Ok(_) => ApiResponse::success(RegisterResponse {}),
+        Err(err) => ApiResponse::error(err),
     }
 }
+
 #[cfg(test)]
 #[tokio::test]
 async fn test_register_handler_failed_password_invalid() {

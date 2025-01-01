@@ -658,11 +658,11 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 name = "datastore"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "env",
  "lazy_static",
  "mongodb",
  "serde",
- "serde_json",
  "tokio",
 ]
 
@@ -1630,14 +1630,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "json_error"
+name = "json_response"
 version = "0.1.0"
 dependencies = [
- "json_error_derive",
+ "json_response_derive",
+ "salvo",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
-name = "json_error_derive"
+name = "json_response_derive"
 version = "0.1.0"
 dependencies = [
  "quote",
@@ -3080,7 +3083,7 @@ dependencies = [
  "crypto",
  "datastore",
  "env",
- "json_error",
+ "json_response",
  "lazy_static",
  "mongodb",
  "regex",
