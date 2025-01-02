@@ -31,32 +31,10 @@ pub mod hash {
 pub mod crypto_aes {
     use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
     use aes::Aes256;
-    use once_cell::sync::Lazy;
-    use std::{
-        env,
-        sync::{Arc, Mutex},
-    };
+    use std::env;
 
     type Aes256CbcEnc = cbc::Encryptor<Aes256>;
     type Aes256CbcDec = cbc::Decryptor<Aes256>;
-
-    static CIPHER: Lazy<Arc<Mutex<Aes>>> = Lazy::new(|| {
-        let secret: [u8; 32] = env::var("AES_KEY")
-            .unwrap_or_else(|_| panic!("Failed to retrieve AES_KEY"))
-            .as_bytes()
-            .try_into()
-            .unwrap();
-        let iv: [u8; 16] = env::var("AES_IV")
-            .unwrap_or_else(|_| panic!("Failed to retrieve AES_IV"))
-            .as_bytes()
-            .try_into()
-            .unwrap();
-
-        Arc::new(Mutex::new(Aes {
-            encoder: Aes256CbcEnc::new(&secret.into(), &iv.into()),
-            decoder: Aes256CbcDec::new(&secret.into(), &iv.into()),
-        }))
-    });
 
     struct Aes {
         encoder: Aes256CbcEnc,
@@ -64,24 +42,41 @@ pub mod crypto_aes {
     }
 
     impl Aes {
-        fn encode(&self, text: &[u8]) -> Vec<u8> {
+        pub fn new() -> Self {
+            let secret: [u8; 32] = env::var("AES_KEY")
+                .unwrap_or_else(|_| panic!("Failed to retrieve AES_KEY"))
+                .as_bytes()
+                .try_into()
+                .unwrap();
+            let iv: [u8; 16] = env::var("AES_IV")
+                .unwrap_or_else(|_| panic!("Failed to retrieve AES_IV"))
+                .as_bytes()
+                .try_into()
+                .unwrap();
+
+            Aes {
+                encoder: Aes256CbcEnc::new(&secret.into(), &iv.into()),
+                decoder: Aes256CbcDec::new(&secret.into(), &iv.into()),
+            }
+        }
+        fn encode(self, text: &[u8]) -> Vec<u8> {
             self.encoder.clone().encrypt_padded_vec_mut::<Pkcs7>(text)
         }
 
-        fn decode(&self, text: &[u8]) -> Vec<u8> {
-            self.decoder
-                .clone()
-                .decrypt_padded_vec_mut::<Pkcs7>(text)
-                .unwrap()
+        fn decode(self, text: &[u8]) -> Result<Vec<u8>, String> {
+            match self.decoder.clone().decrypt_padded_vec_mut::<Pkcs7>(text) {
+                Ok(v) => Ok(v),
+                Err(err) => Err(err.to_string()),
+            }
         }
     }
 
     pub fn encode(text: &[u8]) -> Vec<u8> {
-        CIPHER.lock().unwrap().encode(text)
+        Aes::new().encode(text)
     }
 
-    pub fn decode(buf: &[u8]) -> Vec<u8> {
-        CIPHER.lock().unwrap().decode(buf)
+    pub fn decode(buf: &[u8]) -> Result<Vec<u8>, String> {
+        Aes::new().decode(buf)
     }
 
     #[cfg(test)]
@@ -90,17 +85,21 @@ pub mod crypto_aes {
 
         #[test]
         fn test_encode_and_decode() {
+            std::env::set_var("AES_KEY", "Z44JJuldrAXxYpg0Z44JJuldrAXxYpg0");
+            std::env::set_var("AES_IV", "Z44JJuldrAXxYpg0");
             let plaintext = b"teststring123";
             let encrypted = encode(plaintext);
             let decrypted = decode(&encrypted);
-            assert_eq!(plaintext.to_vec(), decrypted);
+            assert_eq!(plaintext.to_vec(), decrypted.unwrap());
         }
 
         #[test]
         fn test_invalid_decryption() {
+            std::env::set_var("AES_KEY", "Z44JJuldrAXxYpg0Z44JJuldrAXxYpg0");
+            std::env::set_var("AES_IV", "Z44JJuldrAXxYpg0");
             let invalid_data = b"invalid_data";
             let decrypted = decode(invalid_data);
-            assert!(decrypted.is_empty()); // Ensure it's empty or invalid
+            assert!(decrypted.is_err()); // Ensure it's empty or invalid
         }
     }
 }

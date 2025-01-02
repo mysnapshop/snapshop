@@ -14,8 +14,13 @@ pub trait ErrorCode: Serialize + Display + Send {
     fn error_code(&self) -> u16;
 }
 
+/// This trait provides a method to log error associated with a request.
+pub trait ErrorLogger: ErrorCode {
+    fn log_error(&self, req: &mut Request);
+}
+
 /// Trait for types that can be converted into a JSON response.
-pub trait ToJson<T: Send, E: ErrorCode> {
+pub trait ToJson<T: Send, E: ErrorLogger> {
     /// Converts the type into a `Json<ApiResponse<T, E>>`.
     fn to_json(self) -> Json<ApiResponse<T, E>>
     where
@@ -24,6 +29,7 @@ pub trait ToJson<T: Send, E: ErrorCode> {
 
 /// Represents the status of an API response.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
 enum ApiResponseStatus {
     Success,
     Failed,
@@ -40,7 +46,7 @@ impl Display for ApiResponseStatus {
 
 /// Represents an API error.
 #[derive(Serialize, Debug, PartialEq)]
-pub struct ApiError<E: ErrorCode> {
+pub struct ApiError<E: ErrorLogger> {
     /// The error code.
     code: u16,
     /// The error message.
@@ -50,7 +56,7 @@ pub struct ApiError<E: ErrorCode> {
     _inner: E,
 }
 
-impl<E: ErrorCode> ToJson<(), E> for ApiError<E> {
+impl<E: ErrorLogger> ToJson<(), E> for ApiError<E> {
     fn to_json(self) -> Json<ApiResponse<(), E>> {
         Json(ApiResponse::<(), E>::error(self._inner))
     }
@@ -58,7 +64,7 @@ impl<E: ErrorCode> ToJson<(), E> for ApiError<E> {
 
 /// Represents a generic API response.
 #[derive(Serialize, Debug, PartialEq)]
-pub struct ApiResponse<V: Serialize, E: ErrorCode> {
+pub struct ApiResponse<V: Serialize, E: ErrorLogger> {
     /// The status of the response.
     status: ApiResponseStatus,
 
@@ -71,7 +77,7 @@ pub struct ApiResponse<V: Serialize, E: ErrorCode> {
     error: Option<ApiError<E>>,
 }
 
-impl<T: Serialize, E: ErrorCode> ApiResponse<T, E> {
+impl<T: Serialize, E: ErrorLogger> ApiResponse<T, E> {
     /// Creates a new `ApiResponse` with a `Failed` status and the given error.
     pub fn error(err: E) -> ApiResponse<T, E> {
         ApiResponse {
@@ -95,15 +101,18 @@ impl<T: Serialize, E: ErrorCode> ApiResponse<T, E> {
     }
 }
 
-impl<T: Serialize + Send, E: ErrorCode> ToJson<T, E> for ApiResponse<T, E> {
+impl<T: Serialize + Send, E: ErrorLogger> ToJson<T, E> for ApiResponse<T, E> {
     fn to_json(self) -> Json<ApiResponse<T, E>> {
         Json(self)
     }
 }
 
 #[async_trait]
-impl<T: Serialize + Send, E: ErrorCode> Writer for ApiResponse<T, E> {
-    async fn write(mut self, _: &mut Request, _: &mut Depot, res: &mut Response) {
+impl<T: Serialize + Send, E: ErrorLogger> Writer for ApiResponse<T, E> {
+    async fn write(mut self, req: &mut Request, _: &mut Depot, res: &mut Response) {
+        if let Some(err) = &self.error {
+            err._inner.log_error(req);
+        }
         res.render(self.to_json());
     }
 }
@@ -117,7 +126,7 @@ mod tests {
     use serde::Serialize;
     use serde_json::{self, json};
 
-    use crate::{ApiResponse, ApiResponseStatus};
+    use crate::{ApiResponse, ApiResponseStatus, ErrorLogger};
 
     #[derive(ErrorCode, Serialize, Debug, PartialEq)]
     enum Error {
@@ -134,6 +143,12 @@ mod tests {
     impl Display for Error {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "{:?}", self)
+        }
+    }
+
+    impl ErrorLogger for Error {
+        fn log_error(&self, _: &mut salvo::Request) {
+            ()
         }
     }
 
