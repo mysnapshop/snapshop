@@ -1,27 +1,32 @@
 use super::model::User;
 use crate::modules::utils::{validate_email, validate_passowrd};
 use datastore::Datastore;
+use error::AccountError;
+use json_response::Error;
 use mongodb::bson::doc;
 pub mod error {
     use std::fmt::Display;
 
-    use json_response::ErrorCode;
+    use json_response::{Error, ErrorLogger};
     use serde::Serialize;
 
-    #[derive(Debug, PartialEq, ErrorCode, Serialize)]
+    #[derive(Debug, PartialEq, Error, Serialize)]
     pub enum AccountError {
+        #[error_code(4001)]
         UserAlreadyExist,
-        PasswordInvalid,
-        EmailInvalid,
         InternalServerError(String),
+    }
+
+    impl ErrorLogger for AccountError {
+        fn log_error(&self, req: &mut salvo::Request) {
+            ()
+        }
     }
 
     impl Display for AccountError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
                 Self::UserAlreadyExist => f.write_str("UserAlreadyExist"),
-                Self::PasswordInvalid => f.write_str("InvalidPassword"),
-                Self::EmailInvalid => f.write_str("EmailInvalid"),
                 Self::InternalServerError(_) => f.write_str("InternalServerError"),
             }
         }
@@ -44,7 +49,7 @@ impl AccountService {
         &self,
         email: String,
         password: String,
-    ) -> Result<(), error::AccountError> {
+    ) -> Result<(), AccountError> {
         match self
             .store
             .find_one::<User>(doc! {"email": email.clone()})
@@ -58,19 +63,10 @@ impl AccountService {
             Err(err) => return Err(error::AccountError::InternalServerError(err.to_string())),
         };
 
-        // validate password
-        if !validate_passowrd(password.as_str()) {
-            return Err(error::AccountError::PasswordInvalid);
-        }
-
-        if !validate_email(email.as_str()) {
-            return Err(error::AccountError::EmailInvalid);
-        }
-
         // Hash password using Bcrypt
         let password = match crypto::hash::make(password.as_str()) {
             Ok(s) => s,
-            Err(_) => return Err(error::AccountError::PasswordInvalid),
+            Err(err) => return Err(error::AccountError::InternalServerError(err.to_string())),
         };
 
         let mut u = User::new(email).with_password(password);
@@ -100,32 +96,23 @@ impl AccountService {
 
 #[cfg(test)]
 mod tests {
-
     use crate::modules::account::service::{error::AccountError, AccountService};
 
     #[tokio::test]
-    async fn test_register_failed_password_invalid() {
-        let store = datastore::Datastore::new(env::get("DATABASE_URL").unwrap().as_str()).await;
+    async fn test_register_failed_email_exist() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let (_server, connection_string) = crate::modules::utils::setup_test_db().await;
+        let store = datastore::Datastore::new(connection_string.as_str()).await;
         let svc = AccountService::new(store);
         let r = svc
-            .register("acme@gmail.com".to_string(), "".to_string())
+            .register("acme@gmail.com".into(), "password".into())
             .await;
         match r {
             Ok(ok) => assert_eq!(ok, ()),
-            Err(err) => assert_eq!(err, AccountError::PasswordInvalid),
-        };
-    }
-
-    #[tokio::test]
-    async fn test_register_failed_email_invalid() {
-        let store = datastore::Datastore::new(env::get("DATABASE_URL").unwrap().as_str()).await;
-        let svc = AccountService::new(store);
-        let r = svc
-            .register("acme".to_string(), "password".to_string())
-            .await;
-        match r {
-            Ok(ok) => assert_eq!(ok, ()),
-            Err(err) => assert_eq!(err, AccountError::EmailInvalid),
+            Err(err) => match err {
+                AccountError::InternalServerError(err) => panic!("{err}"),
+                _ => panic!("{err}"),
+            },
         };
     }
 }

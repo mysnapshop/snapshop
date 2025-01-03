@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields, LitInt};
 
-#[proc_macro_derive(ErrorCode, attributes(error_code))]
+#[proc_macro_derive(Error, attributes(error_code))]
 pub fn error_code_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = parse_macro_input!(input);
 
@@ -53,27 +53,17 @@ pub fn error_code_derive(input: TokenStream) -> TokenStream {
             });
 
             let expanded = quote! {
-                impl #impl_generics ErrorCode for #name #ty_generics #where_clause {
+                impl #impl_generics Error for #name #ty_generics #where_clause {
                     fn error_code(&self) -> u16 {
                         match self {
                             #(#variants)*
                         }
                     }
                 }
-
-                // impl ToJson<()> for #name {
-                //     fn to_json(self) -> Json<ApiResponse<()>> {
-                //         Json(ApiResponse {
-                //             status: ApiResponseStatus::Success,
-                //             data: None,
-                //             error: Some(crate::ApiError::new(self)),
-                //         })
-                //     }
-                // }
             };
 
             TokenStream::from(expanded)
         }
-        _ => panic!("ErrorCode can only be derived for enums"),
+        _ => panic!("Error can only be derived for enums"),
     }
 }

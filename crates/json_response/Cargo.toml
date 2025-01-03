@@ -12,3 +12,4 @@ salvo = "0.75.0"
 json_response_derive = { path = "json_response_derive", optional = true }
 serde = "1.0.217"
 serde_json = "1.0.134"
+tracing = "0.1.41"

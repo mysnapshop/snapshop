@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use salvo::{async_trait, writing::Json, Depot, Request, Response, Writer};
 use serde::{Deserialize, Serialize};
@@ -9,18 +9,18 @@ pub use json_response_derive::*;
 /// Trait for types that represent an error.
 ///
 /// This trait provides a method to get an error code associated with the error.
-pub trait ErrorCode: Serialize + Display + Send {
+pub trait Error: Display + Debug + Serialize + Send + ErrorLogger + PartialEq {
     /// Returns the error code associated with the error.
     fn error_code(&self) -> u16;
 }
 
 /// This trait provides a method to log error associated with a request.
-pub trait ErrorLogger: ErrorCode {
+pub trait ErrorLogger {
     fn log_error(&self, req: &mut Request);
 }
 
 /// Trait for types that can be converted into a JSON response.
-pub trait ToJson<T: Send, E: ErrorLogger> {
+pub trait ToJson<T: Send, E: Error> {
     /// Converts the type into a `Json<ApiResponse<T, E>>`.
     fn to_json(self) -> Json<ApiResponse<T, E>>
     where
@@ -46,7 +46,7 @@ impl Display for ApiResponseStatus {
 
 /// Represents an API error.
 #[derive(Serialize, Debug, PartialEq)]
-pub struct ApiError<E: ErrorLogger> {
+pub struct ApiError<E: Error> {
     /// The error code.
     code: u16,
     /// The error message.
@@ -56,7 +56,7 @@ pub struct ApiError<E: ErrorLogger> {
     _inner: E,
 }
 
-impl<E: ErrorLogger> ToJson<(), E> for ApiError<E> {
+impl<E: Error> ToJson<(), E> for ApiError<E> {
     fn to_json(self) -> Json<ApiResponse<(), E>> {
         Json(ApiResponse::<(), E>::error(self._inner))
     }
@@ -64,7 +64,7 @@ impl<E: ErrorLogger> ToJson<(), E> for ApiError<E> {
 
 /// Represents a generic API response.
 #[derive(Serialize, Debug, PartialEq)]
-pub struct ApiResponse<V: Serialize, E: ErrorLogger> {
+pub struct ApiResponse<V: Serialize, E: Error> {
     /// The status of the response.
     status: ApiResponseStatus,
 
@@ -77,7 +77,7 @@ pub struct ApiResponse<V: Serialize, E: ErrorLogger> {
     error: Option<ApiError<E>>,
 }
 
-impl<T: Serialize, E: ErrorLogger> ApiResponse<T, E> {
+impl<T: Serialize, E: Error> ApiResponse<T, E> {
     /// Creates a new `ApiResponse` with a `Failed` status and the given error.
     pub fn error(err: E) -> ApiResponse<T, E> {
         ApiResponse {
@@ -101,14 +101,14 @@ impl<T: Serialize, E: ErrorLogger> ApiResponse<T, E> {
     }
 }
 
-impl<T: Serialize + Send, E: ErrorLogger> ToJson<T, E> for ApiResponse<T, E> {
+impl<T: Serialize + Send, E: Error> ToJson<T, E> for ApiResponse<T, E> {
     fn to_json(self) -> Json<ApiResponse<T, E>> {
         Json(self)
     }
 }
 
 #[async_trait]
-impl<T: Serialize + Send, E: ErrorLogger> Writer for ApiResponse<T, E> {
+impl<T: Serialize + Send, E: Error> Writer for ApiResponse<T, E> {
     async fn write(mut self, req: &mut Request, _: &mut Depot, res: &mut Response) {
         if let Some(err) = &self.error {
             err._inner.log_error(req);
@@ -117,9 +117,52 @@ impl<T: Serialize + Send, E: ErrorLogger> Writer for ApiResponse<T, E> {
     }
 }
 
+#[derive(Serialize, Error, PartialEq, Debug)]
+pub enum RequestError<E: Error> {
+    #[error_code(401)]
+    Unauthorized,
+    #[error_code(400)]
+    BadRequest(String),
+    #[error_code(500)]
+    InternalServerError(String),
+    ServiceError(E),
+}
+
+impl<E: Error> Display for RequestError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unauthorized => f.write_str("Unauthorized"),
+            Self::BadRequest(message) => f.write_str(format!("BadRequest:{}", message).as_str()),
+            Self::InternalServerError(_) => f.write_str("InternalServerError"),
+            Self::ServiceError(err) => f.write_str(format!("{}", err).as_str()),
+        }
+    }
+}
+
+impl<E: Error> ErrorLogger for RequestError<E> {
+    fn log_error(&self, req: &mut Request) {
+        match self {
+            Self::InternalServerError(err) => {
+                let span = tracing::span!(
+                    tracing::Level::ERROR,
+                    "InternalServerError",
+                    method = %req.method(),
+                    path = %req.uri().path(),
+                    client_ip = %req.remote_addr().to_string(),
+                );
+                let _enter = span.enter();
+
+                tracing::error!("{err}");
+            }
+            Self::ServiceError(err) => err.log_error(req),
+            _ => (),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ErrorCode;
+    use super::Error;
 
     use std::fmt::Display;
 
@@ -128,8 +171,8 @@ mod tests {
 
     use crate::{ApiResponse, ApiResponseStatus, ErrorLogger};
 
-    #[derive(ErrorCode, Serialize, Debug, PartialEq)]
-    enum Error {
+    #[derive(Error, Serialize, Debug, PartialEq)]
+    enum MyError {
         #[error_code(200)]
         UnitError,
 
@@ -140,13 +183,13 @@ mod tests {
         StructError { _inner: String },
     }
 
-    impl Display for Error {
+    impl Display for MyError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "{:?}", self)
         }
     }
 
-    impl ErrorLogger for Error {
+    impl ErrorLogger for MyError {
         fn log_error(&self, _: &mut salvo::Request) {
             ()
         }
@@ -154,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_success_response() {
-        let response: ApiResponse<String, Error> =
+        let response: ApiResponse<String, MyError> =
             ApiResponse::success("Hello, world!".to_string());
         let expected = json!({
             "status": "Success",
@@ -165,8 +208,8 @@ mod tests {
 
     #[test]
     fn test_unit_error_response() {
-        let error = Error::UnitError;
-        let response: ApiResponse<(), Error> = ApiResponse::error(error);
+        let error = MyError::UnitError;
+        let response: ApiResponse<(), MyError> = ApiResponse::error(error);
         let expected = json!({
             "status": "Failed",
             "error": {
@@ -179,8 +222,8 @@ mod tests {
 
     #[test]
     fn test_tuple_error_response() {
-        let error = Error::TupleError(123);
-        let response: ApiResponse<(), Error> = ApiResponse::error(error);
+        let error = MyError::TupleError(123);
+        let response: ApiResponse<(), MyError> = ApiResponse::error(error);
         let expected = json!({
             "status": "Failed",
             "error": {
@@ -193,10 +236,10 @@ mod tests {
 
     #[test]
     fn test_struct_error_response() {
-        let error = Error::StructError {
+        let error = MyError::StructError {
             _inner: "Internal Error".to_string(),
         };
-        let response: ApiResponse<(), Error> = ApiResponse::error(error);
+        let response: ApiResponse<(), MyError> = ApiResponse::error(error);
         let expected = json!({
             "status": "Failed",
             "error": {
@@ -209,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_empty_response() {
-        let response: ApiResponse<(), Error> = ApiResponse {
+        let response: ApiResponse<(), MyError> = ApiResponse {
             status: ApiResponseStatus::Success,
             data: None,
             error: None,

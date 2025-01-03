@@ -39,6 +39,8 @@ datastore = { path = "crates/datastore" }
 crypto = { path = "crates/crypto" }
 env = { path = "crates/env" }
 json_response = { path = "crates/json_response" }
+testcontainers = "0.23.1"
+testcontainers-modules = { version = "0.11.4", features = ["mongo", "redis"] }
 
 [build-dependencies]
 tonic-build = "0.12.3"

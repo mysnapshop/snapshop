@@ -589,7 +589,7 @@ dependencies = [
  "base64 0.22.1",
  "bcrypt",
  "cbc",
- "once_cell",
+ "lazy_static",
  "rand",
 ]
 
@@ -1637,6 +1637,7 @@ dependencies = [
  "salvo",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -3090,6 +3091,8 @@ dependencies = [
  "salvo",
  "serde",
  "serde_json",
+ "testcontainers",
+ "testcontainers-modules",
  "tokio",
  "tonic-build",
  "tracing",
@@ -3291,6 +3294,15 @@ dependencies = [
  "tokio-tar",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "testcontainers-modules"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "064a2677e164cad39ef3c1abddb044d5a25c49d27005804563d8c4227aac8bd0"
+dependencies = [
+ "testcontainers",
 ]
 
 [[package]]
