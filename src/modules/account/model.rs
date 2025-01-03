@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use datastore::Model;
-use mongodb::{bson::oid::ObjectId, Client};
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 
 // User model
@@ -31,6 +31,7 @@ pub type MetaData = HashMap<String, serde_json::Value>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub(crate) struct User {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub _id: Option<ObjectId>,
     pub email: String,
     pub providers: Vec<AuthProvider>,
@@ -68,11 +69,18 @@ impl Model for User {
     where
         Self: Sized,
     {
-        client
+        match client
             .database("snapshop")
-            .collection::<Self>("users")
+            .collection::<UserForDB>("users")
             .find_one(query)
             .await
+        {
+            Ok(ok) => match ok {
+                Some(ok) => Ok(Some(ok.into())),
+                None => Ok(None),
+            },
+            Err(err) => Err(err),
+        }
     }
 
     async fn find_many(
@@ -92,10 +100,11 @@ impl Model for User {
     where
         Self: Sized,
     {
+        let user_for_db: UserForDB = data.clone().into();
         match client
             .database("snapshop")
-            .collection::<Self>("users")
-            .insert_one(data.clone())
+            .collection::<UserForDB>("users")
+            .insert_one(user_for_db)
             .await
         {
             Ok(result) => {
@@ -104,6 +113,43 @@ impl Model for User {
                 Ok(id)
             }
             Err(err) => return Err(err),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UserForDB {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _id: Option<ObjectId>,
+    email: String,
+    providers: Vec<AuthProvider>,
+    meta: MetaData,
+    credentials: MetaData,
+    profiles: HashMap<ProfileType, Profile>,
+}
+
+impl From<User> for UserForDB {
+    fn from(user: User) -> Self {
+        Self {
+            _id: user._id,
+            email: user.email,
+            providers: user.providers,
+            meta: user.meta,
+            credentials: user.credentials,
+            profiles: user.profiles,
+        }
+    }
+}
+
+impl From<UserForDB> for User {
+    fn from(user_db: UserForDB) -> Self {
+        Self {
+            _id: user_db._id,
+            email: user_db.email,
+            providers: user_db.providers,
+            meta: user_db.meta,
+            credentials: user_db.credentials,
+            profiles: user_db.profiles,
         }
     }
 }

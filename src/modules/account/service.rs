@@ -98,11 +98,20 @@ impl AccountService {
 mod tests {
     use crate::modules::account::service::{error::AccountError, AccountService};
 
+    use super::User;
+
     #[tokio::test]
     async fn test_register_failed_email_exist() {
         let _ = tracing_subscriber::fmt::try_init();
         let (_server, connection_string) = crate::modules::utils::setup_test_db().await;
         let store = datastore::Datastore::new(connection_string.as_str()).await;
+        // insert data
+        let _ = store
+            .clone()
+            .insert_one(&mut User::new("acme@gmail.com".into()))
+            .await
+            .unwrap();
+
         let svc = AccountService::new(store);
         let r = svc
             .register("acme@gmail.com".into(), "password".into())
@@ -111,7 +120,7 @@ mod tests {
             Ok(ok) => assert_eq!(ok, ()),
             Err(err) => match err {
                 AccountError::InternalServerError(err) => panic!("{err}"),
-                _ => panic!("{err}"),
+                _ => assert_eq!(err, AccountError::UserAlreadyExist),
             },
         };
     }

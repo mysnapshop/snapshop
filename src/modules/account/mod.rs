@@ -97,12 +97,12 @@ mod register_tests {
 
         let req = TestClient::post(format!("http://127.0.0.1:5800/"))
             .add_header(header::CONTENT_TYPE, "application/json", true)
-            .raw_json(r#"{"email":"acme@gmail.com"}"#);
+            .raw_json(r#"{"email":"acme@gmail.com", "password":""}"#);
         let content = req.send(&service).await.take_string().await.unwrap();
         println!("{}",&content);
         assert_eq!(
             content,
-            r#"{"status":"failed","error":{"code":4002,"message":"BadRequest"}}"#
+            r#"{"status":"failed","error":{"code":400,"message":"BadRequest:invalid_password"}}"#
         );
     }
 }
