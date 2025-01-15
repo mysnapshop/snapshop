@@ -1,8 +1,6 @@
 use super::model::User;
-use crate::modules::utils::{validate_email, validate_passowrd};
 use datastore::Datastore;
 use error::AccountError;
-use json_response::Error;
 use mongodb::bson::doc;
 pub mod error {
     use std::fmt::Display;

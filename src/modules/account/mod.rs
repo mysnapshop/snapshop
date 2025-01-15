@@ -1,8 +1,6 @@
 use datastore::Datastore;
 use json_response::{ApiResponse, RequestError};
-use salvo::{
-    affix_state, handler, http::StatusCode, writing::Json, Depot, Request, Response, Router,
-};
+use salvo::{affix_state, handler, Depot, Request, Response, Router};
 use serde::{Deserialize, Serialize};
 use service::{error::AccountError, AccountService};
 
@@ -13,12 +11,10 @@ mod service;
 
 pub fn bind_http_route<'a>(router: Router, store: Datastore) -> Router {
     let svc = AccountService::new(store);
-    router.push(
-        Router::new()
-            .hoop(affix_state::inject(svc))
-            .path("/account/profile")
-            .post(profile_handler),
-    )
+    router
+        .hoop(affix_state::inject(svc))
+        .push(Router::new().path("/account/profile").post(profile_handler))
+        .push(Router::new().path("/auth/register").post(register_handler))
 }
 
 #[derive(Deserialize)]
@@ -99,7 +95,7 @@ mod register_tests {
             .add_header(header::CONTENT_TYPE, "application/json", true)
             .raw_json(r#"{"email":"acme@gmail.com", "password":""}"#);
         let content = req.send(&service).await.take_string().await.unwrap();
-        println!("{}",&content);
+        println!("{}", &content);
         assert_eq!(
             content,
             r#"{"status":"failed","error":{"code":400,"message":"BadRequest:invalid_password"}}"#
