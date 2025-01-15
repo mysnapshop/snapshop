@@ -1,6 +1,6 @@
 ## Snapshop
 
-### Prequisite
+### Requirements
 - Docker
 
 #### Clone and setup the project locally
